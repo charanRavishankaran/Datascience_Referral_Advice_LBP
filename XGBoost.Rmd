@@ -1,0 +1,253 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library("nnet")
+library("e1071")
+require(XLConnect)
+library("randomForest")
+library("dplyr")
+library("caret")
+library("writexl")
+library("neuralnet")
+library(caTools)
+library("ROSE")
+library("ROCR")
+library("DMwR")
+library("xgboost")
+library("magrittr")
+library("Matrix")
+print("Loaded Packages")
+```
+
+
+```{r}
+print("Loading data")
+wb = loadWorkbook("ra.xlsx")
+df = readWorksheet(wb, sheet = "Training Dataset", header = TRUE)
+print("Data set Loaded...")
+#s_df <-  sample(1:nrow(df))
+#df <- df[s_df, ]  #manual shuffling code
+#head(df)
+dim(df)
+```
+
+
+```{r}
+df1 = df %>% mutate_if(is.character, as.factor) # changing character to as a factor
+df1$Treatment <- as.factor(df1$Treatment)
+table(df1$Treatment)
+#Changing range values to single digit
+new_df <- mutate(df1, Age=ifelse(Age =="0-19",0 ,Age),
+                 Age=ifelse(Age =="20-29",1,Age),Age=ifelse(Age =="30-39",2 ,Age),
+                 Age=ifelse(Age =="40-49",3,Age),Age=ifelse(Age =="50-59",4 ,Age),
+                 Age=ifelse(Age =="60-69",5,Age),Age=ifelse(Age =="70-79",6 ,Age),
+                 Age=ifelse(Age ==">=80",7,Age))
+
+dim(new_df)
+
+#sapply( new_df, function(x) sum(is.na(x))) #to check null value counts in each column
+
+#str(new_df)
+```
+
+
+```{r}
+getmode <- function(v) {
+   v1 <- na.omit(v) # removing NA 
+   uniqv <- unique(v1)
+   uniqv[which.max(tabulate(match(v1, uniqv)))]
+}
+
+
+for(i in 2:ncol(new_df)){
+  
+  if(length(unique(new_df[,i]))  == 3){
+    
+      
+      fff = getmode(new_df[,i]) # get mode of the column
+      
+      new_df[is.na(new_df[,i]), i] <- fff
+    
+  }else {
+    
+    new_df[is.na(new_df[,i]), i] <- round(median(new_df[,i], na.rm = TRUE)) # replacing with mean of column
+    
+  }
+  
+  
+}
+
+#str(new_df)
+#sapply( new_df, function(x) sum(is.na(x)))
+
+#write_xlsx(new_df,"E:\\stdies\\Data_Science\\q3\\datascience\\project\\Referral_Advice\\new_RA.xlsx")
+```
+
+
+```{r}
+one_Value = filter(new_df,new_df$Treatment == 1)
+two_Value = filter(new_df,new_df$Treatment == 2)
+three_Value = filter(new_df,new_df$Treatment == 3)
+four_Value = filter(new_df,new_df$Treatment == 4)
+five_Value = filter(new_df,new_df$Treatment == 5)
+
+H <- c(length(one_Value$Treatment),length(two_Value$Treatment),length(three_Value$Treatment)
+       ,length(four_Value$Treatment),length(five_Value$Treatment))
+
+M <- c("Advice","Rehab","surgery","inj/med","comb 1-4")
+
+barplot.default(H,names.arg=M,xlab="Labels",ylab="Counts",col="blue",main="LBP Data Volumes",border="red")
+
+
+pie(table(new_df$Treatment))
+```
+
+
+```{r}
+
+
+
+
+```
+
+
+```{r}
+library(caTools)
+set.seed(222)
+sample = sample.split(new_df,SplitRatio = 0.70)
+train1 =subset(new_df,sample ==TRUE)
+test1=subset(new_df, sample==FALSE)
+
+# PLOTTING GRAPH FOR TRAINING SET
+
+one_Value_tr = filter(train1,train1$Treatment == 1)
+two_Value_tr = filter(train1,train1$Treatment == 2)
+three_Value_tr = filter(train1,train1$Treatment == 3)
+four_Value_tr = filter(train1,train1$Treatment == 4)
+five_Value_tr = filter(train1,train1$Treatment == 5)
+
+
+length(one_Value_tr$Treatment)
+length(two_Value_tr$Treatment)
+length(three_Value_tr$Treatment)
+length(four_Value_tr$Treatment)
+length(five_Value_tr$Treatment)
+print("----------------------")
+H <- c(length(one_Value_tr$Treatment),length(two_Value_tr$Treatment),length(three_Value_tr$Treatment)
+       ,length(four_Value_tr$Treatment),length(five_Value_tr$Treatment))
+
+M <- c("Advice","Rehab","surgery","inj/med","comb 1-4")
+
+barplot.default(H,names.arg=M,xlab="Labels",ylab="Counts",col="blue",ylim=c(0,1000),main="LBP training Data Volumes",border="red")
+pie(table(H))
+
+# PLOTTING GRAPH FOR TEST SET
+
+one_Value_te = filter(test1,test1$Treatment == 1)
+two_Value_te = filter(test1,test1$Treatment == 2)
+three_Value_te = filter(test1,test1$Treatment == 3)
+four_Value_te = filter(test1,test1$Treatment == 4)
+five_Value_te = filter(test1,test1$Treatment == 5)
+
+length(one_Value_te$Treatment)
+length(two_Value_te$Treatment)
+length(three_Value_te$Treatment)
+length(four_Value_te$Treatment)
+length(five_Value_te$Treatment)
+
+H <- c(length(one_Value_te$Treatment),length(two_Value_te$Treatment),length(three_Value_te$Treatment)
+       ,length(four_Value_te$Treatment),length(five_Value_te$Treatment))
+
+M <- c("Advice","Rehab","surgery","inj/med","comb 1-4")
+
+barplot.default(H,names.arg=M,xlab="Labels",ylab="Counts",col="blue",ylim=c(0,1000),main="LBP test Data Volumes",border="red")
+```
+
+
+```{r}
+
+tab <- table(train1$Treatment)
+tab
+prop.table(tab)
+
+#data_over <- ovun.sample(Treatment~., data = train1, method = "over", N=nrow(train1))$data
+set.seed(823)
+data_over <- SMOTE(Treatment~.,train1,perc.over = 9000)
+
+table(data_over$Treatment)
+
+prop.table(table(data_over$Treatment))
+
+data_over$Treatment <- as.numeric(data_over$Treatment)
+
+
+```
+
+
+```{r}
+trainm <- sparse.model.matrix(Treatment ~ Continuous_pain+Uses_analgesics+Serious_disease+Fever+Trauma+Duration_of_pain+Irrational_thoughts_work+Age+Kinesiophobia_physical_exercise+Uses_corticosteroids+Paidwork+leg_left_pain_intensity+low_back_pain_intensity+Nocturnal_pain+Stress+ Depression+ Sick_leave+Loss_muscle_strength, data = data_over)
+train_label <- data_over[,"Treatment"]
+train_matrix <- xgb.DMatrix(data = as.matrix(trainm), label = train_label)
+
+testm <- sparse.model.matrix(Treatment ~ Continuous_pain+Uses_analgesics+Serious_disease+Fever+Trauma+Duration_of_pain+Irrational_thoughts_work+Age+Kinesiophobia_physical_exercise+Uses_corticosteroids+Paidwork+leg_left_pain_intensity+low_back_pain_intensity+Nocturnal_pain+Stress+ Depression+ Sick_leave+Loss_muscle_strength, data = test1)
+test_label <- test1[,"Treatment"]
+test_matrix <- xgb.DMatrix(data = as.matrix(testm), label = test_label)
+
+#Parameters
+
+nc <-  length(unique(train_label))
+xgb_params <- list("objective" = "multi:softmax", "eval_metric" = "mlogloss", 
+                   "num_class" = nc+1)
+watchlist <- list(train = train_matrix, test = test_matrix)
+
+bst_model <- xgb.train(params = xgb_params, data = train_matrix, nrounds = 226,
+                       watchlist = watchlist, eta = 0.02,
+                       max.depth = 5, gamma =0.5, subsample = 1 , colsample_bytree = 1)
+
+print(bst_model)
+```
+
+
+```{r}
+e <- data.frame(bst_model$evaluation_log)
+plot(e$iter, e$train_mlogloss, col = 'blue')
+lines(e$iter, e$test_mlogloss, col = 'red')
+
+min(e$test_mlogloss)
+#e[e$test_mlogloss == 1.145671,]
+
+e[e$test_mlogloss == 1.190814,]
+```
+
+
+```{r}
+imp <- xgb.importance(colnames(train_matrix), model = bst_model)
+print(imp)
+xgb.plot.importance(imp)
+```
+
+
+```{r}
+
+p <- predict(bst_model, newdata = test_matrix)
+unique(p)
+unique(test_label)
+head(p)
+nc
+length(test_label)
+
+
+u <- union(p, test_label)
+t <- table(factor(p, u), factor(test_label, u))
+confusionMatrix(t)
+
+```
+
+
+
+```
+
